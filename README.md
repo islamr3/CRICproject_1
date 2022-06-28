@@ -8,4 +8,3 @@ Package install for this program:
 
 Other function install during running the program
 
-To see the result, please click model_Table5_follow_up_7_years.html
