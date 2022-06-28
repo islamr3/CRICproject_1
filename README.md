@@ -7,3 +7,5 @@ Package install for this program:
 "adapr","survival","survminer","dplyr","CBPS","purrr","gtsummary","gt","cobalt","officer","rvg","lme4","lmerTest","effects","emmeans","readxl","tableone"
 
 Other function install during running the program
+
+To see the result, please click model_Table5_follow_up_7_years.html
