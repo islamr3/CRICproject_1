@@ -1,0 +1,276 @@
+---
+title: "CRIC and SMART2D participants with 7 year follow up (Table 5)"
+author: "Rabiul Islam<br><small>Center for Renal Precision Medicine<br>University of Texas Health San Antonio School of Medicine</small>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: true
+    toc_float: 
+      collapsed: false
+    code_folding: hide
+    theme: cerulean
+---
+
+![Center for Renal Precision Medicine](https://dmontemayor.github.io/assets/Long_SOM/horizontal/JPG/UTHSA_Long-SOM_H_CMYK.jpg)
+
+# Brief
+Association of baseline adenine-creatinine ratio with risk for progression to ESKD in CRIC and SMART2D participants with 7 year follow up. Multivariable Cox proportional hazard regression models were adjusted for baseline age, sex, ethnicity, body mass index, diabetes duration, mean arterial pressure, hemoglobin A1c, eGFR and natural-log transformed urine albumin-to-creatinine ratio. Urine adenine/creatinine ratio was modelled as both continuous variable (1-SD increment in natural log-transformed adenine-creatinine ratio) and categorical variable (the low tertile as reference).
+
+
+ 
+```{r requirements, message=FALSE, warning=FALSE}
+#Requirements
+requirements <- c("adapr","survival","survminer","dplyr","CBPS","purrr","gtsummary","gt","cobalt","officer","rvg","lme4","lmerTest","effects","emmeans","readxl","tableone")
+
+#CRAN repository
+repos <- "http://cran.us.r-project.org"
+
+#install and load missing requirements
+for (pack in requirements){
+  if( !is.element(pack, .packages(all.available = TRUE)) ) {
+    #install.packages(pack, repos = repos)
+    install.packages(pack)
+  }
+  library(pack, character.only = TRUE)
+}
+```
+
+
+```{r constants}
+#Constants
+rm(list=ls())
+set.seed( 2011 )
+MWade = 135.13 # molecular weights for adenine in g/mol
+MWcre = 113.12 #molecular weights for creatinine in g/mol
+
+```
+
+# Smart2d dataset analysis
+## Load SMART2D dataset here preprocessing
+```{r}
+#get data
+#smartdata <- read_excel("SMART2D.xlsx")
+smartdata <- read_excel("SMART.xlsx")
+
+```
+
+
+## Apply cox's model to Full cohorts with Unadjusted
+```{r}
+#Select eGFR from 20 to 60
+#smartdata<-smartdata[which(smartdata$ckd_epi >=20 & smartdata$ckd_epi<=60),]
+#Apply cox's model to Normal+Micro
+coxobj_Q2vsQ1<-coxph(formula=Surv(smartdata$time_to_composite__renal_revised, smartdata$composite_renal_sep2019)~
+                        SD_Ln_AdCre, data = smartdata)
+print(paste("Cox's model Results for Normal+Micro= "))
+coxobj_Q2vsQ1
+exp(confint(coxobj_Q2vsQ1)) 
+```
+
+
+## Apply cox's model to Full cohorts with adjusted
+```{r CoxNM}
+#Apply cox's model to Normal+Micro
+coxobj_Q2vsQ1<-coxph(formula=Surv(smartdata$time_to_composite__renal_revised, smartdata$composite_renal_sep2019)~
+                        SD_Ln_AdCre+age+sex+duration_of_diabetes+mean_BP+HbA1c+ckd_epi+LnACR, data = smartdata)
+
+print(paste("Cox's model Results for Normal+Micro= "))
+coxobj_Q2vsQ1
+exp(confint(coxobj_Q2vsQ1)) 
+```
+
+# Defined ACR group based on ACR categorical variable. Defined adenine teritle based on adenine_tertile_CRIC categorical variable. Commulative incidence plot for SMART dataset
+
+```{r}
+subset_dataset1 = smartdata %>%
+  mutate(acr_group = ifelse(is.na(ACR_category), NA, 'unknown'),
+         acr_group = ifelse(ACR_category == 1, 'normo', acr_group),
+         acr_group = ifelse(ACR_category == 2, 'micro', acr_group),
+         acr_group = as.factor(acr_group),
+         adenine_tertile = ifelse(is.na(adenine_tertile_CRIC), NA, 'unknown'),
+         adenine_tertile = ifelse(adenine_tertile_CRIC == 1, 'Q1', adenine_tertile),
+         adenine_tertile = ifelse(adenine_tertile_CRIC == 2, 'Q2', adenine_tertile),
+         adenine_tertile = ifelse(adenine_tertile_CRIC == 3, 'Q3', adenine_tertile),
+         sex2 = ifelse(sex == 1, 'Male', 'Female'),
+         acr_sex_group = paste(acr_group, sex2, sep = '_'))
+
+
+#Cumulative incidence plot for normo+Micro group
+
+
+############################################################################################
+
+#p-value estimate for Q1 and Q3 for Normo+Micro group
+r3_p<-subset_dataset1%>%
+  filter(adenine_tertile=='Q1' | adenine_tertile=='Q3')
+
+inx<-which(r3_p$time_to_composite__renal_revised>=7)
+r3_p[paste("time")]<-replace(r3_p$time_to_composite__renal_revised,inx,7)
+r3_p[paste("event")]<-replace(r3_p$composite_renal_sep2019,inx,0)
+
+
+
+ggsurvplot(survfit(Surv(r3_p$time, r3_p$event)~r3_p$adenine_tertile,data=r3_p),pval = TRUE, xlim=c(-0.1,7), ylim=c(0,0.3), conf.int = FALSE,
+           palette = c("black", "grey60"),
+           risk.table = TRUE, risk.table.col = "strata",
+           fun = "event", xlab = "years from baseline",ylab = c("Cumulative incidence"))
+
+
+
+#surv_diff <- survdiff(Surv(r3_p$time, r3_p$event) ~ r3_p$adenine_tertile, data=r3_p)
+#surv_diff
+```
+
+
+
+
+
+# CRIC dataset analysis
+## Load redcap data in here and estimate 7 yrs follow up
+
+```{r}
+rawdata <- read.csv("RedCapUp2.csv")
+
+t2 <- rawdata$sa_allc_cric_renal3_v3y0
+inx<-which(rawdata$sa_allc_cric_time_renal3_v3y0>=7)
+rawdata[paste("time")]<-replace(rawdata$sa_allc_cric_time_renal3_v3y0,inx,7)
+rawdata[paste("event")]<-replace(rawdata$sa_allc_cric_renal3_v3y0,inx,0)
+```
+
+
+## create new dataset (dataoutcome) with patientid, event, time, egfr_cric, and renal3 
+```{r}
+dataoutcome<-cbind(rawdata["patientid"],rawdata["event"],rawdata["time"], rawdata["egfr_cric_v3y0"],rawdata["sa_allc_cric_renal3_v3y0"],rawdata["sa_allc_cric_time_renal3_v3y0"])
+```
+
+
+## Load Roman dataset here
+```{r download1}
+#get data
+load('/Users/rabiul/Documents/Projects/Sharma_653/Programs/surv_model_data.Rdata')
+cric_data<-obj
+```
+
+
+## Merge Roman dataset and dataoutcome. Defined ACR group and adenine teritle.
+```{r}
+cric_data<-merge(cric_data,dataoutcome,by="patientid")
+
+cric_study_var<-c("patientid","event","time","race_ethnicity_cat","sex","age","bmi","hemoglobin_a1c","metformin","egfr_cric_v3y0","log_acr","albumin_creatinine_ratio","adenine","sa_allc_cric_renal3_v3y0","sa_allc_cric_time_renal3_v3y0","smoke100","map")
+study_cricdata<-cric_data[cric_study_var]
+
+# Cric tertile
+map_to_tertile = function(x){
+  
+  quartiles = quantile(x, na.rm = T, probs = seq(0, 1, by = 1/3))
+  
+  vect_return = rep(NA, length(x)) %>%
+    (function(vect) ifelse(x >= quartiles[1] & x < quartiles[2], 'Q1', vect)) %>%
+    (function(vect) ifelse(x >= quartiles[2] & x < quartiles[3], 'Q2', vect)) %>%
+    (function(vect) ifelse(x >= quartiles[3], 'Q3', vect)) %>% 
+    as.factor()
+  
+  return(vect_return)
+}
+
+subset_dataset = study_cricdata %>%
+  mutate(log_adenine2 = log(adenine+1, base = 2),
+         race_ethnicity_cat = as.character(race_ethnicity_cat),
+         african_american = ifelse(race_ethnicity_cat == 'black', 'african-american', 'other'),
+         hispanic = ifelse(race_ethnicity_cat == 'hispanic', 'hispanic', 'non-hispanic'),
+         acr_group = ifelse(is.na(albumin_creatinine_ratio), NA, 'unknown'),
+         acr_group = ifelse(albumin_creatinine_ratio <= 30, 'normo', acr_group),
+         acr_group = ifelse(albumin_creatinine_ratio > 30 & albumin_creatinine_ratio <= 300, 'micro', acr_group),
+         acr_group = ifelse(albumin_creatinine_ratio > 300, 'macro', acr_group),
+         acr_group = as.factor(acr_group),
+         adenine_cat = ifelse(log_adenine2 < median(log_adenine2, na.rm = T), 'Lower', 'Higher'),
+         adenine_tertile = map_to_tertile(log_adenine2),
+         sex2 = ifelse(sex == 1, 'Male', 'Female'),
+         acr_sex_group = paste(acr_group, sex2, sep = '_'))
+
+```
+
+
+# Estimate Baseline characteristics after merging the clinical variable and dataoutcome
+```{r}
+#Define covariates
+covariates<-c("age", "sex2", "race_ethnicity_cat", "smoke100", "bmi", "map", "egfr_cric_v3y0","hemoglobin_a1c", "acr_group", "albumin_creatinine_ratio")
+
+## Vector of categorical variables that need transformation
+catVars <- c("sex2","race_ethnicity_cat","smoke100", "acr_group")
+
+
+## Create a TableOne object
+tab2 <- CreateTableOne(vars = covariates, data = subset_dataset, factorVars = catVars)
+
+print(tab2)
+```
+
+
+## Apply cox's model to Full cohorts with Unadjusted (Normal and Micro)
+```{r}
+#Select Normal and Micro group from subset_dataset
+idx<-which(subset_dataset$acr_group=="normo" | subset_dataset$acr_group=="micro")
+CRIC<-subset_dataset[idx,]%>%
+  na.omit()
+#Select eGFR from 20 to 60
+#CRIC<-CRIC[which(CRIC$egfr_cric_v3y0>=20 & CRIC$egfr_cric_v3y0<=60),]
+#Apply cox's model to Normal+Micro
+coxobj_Q2vsQ1<-coxph(formula=Surv(CRIC$time, CRIC$event)~
+                        log_adenine2, data = CRIC)
+print(paste("Cox's model Results for Normal+Micro= "))
+coxobj_Q2vsQ1
+exp(confint(coxobj_Q2vsQ1)) 
+```
+
+## Apply cox's model to Full cohorts with adjusted (Normal and Micro) with 1-SD increment (adj)
+```{r}
+#Apply cox's model to Normal+Micro
+coxobj_Q2vsQ1<-coxph(formula=Surv(CRIC$time, CRIC$event)~
+                        age+log_adenine2+race_ethnicity_cat+bmi+sex+map+hemoglobin_a1c+log_acr+egfr_cric_v3y0, data = CRIC)
+print(paste("Cox's model Results for Normal+Micro= "))
+coxobj_Q2vsQ1
+exp(confint(coxobj_Q2vsQ1)) 
+```
+
+
+## Apply cox's model to Full cohorts with adjusted (Normal and Micro) with Tertiles (Tertile 2 vs Tertile 1 and Tertile 3 vs Tertile 1)
+```{r}
+#Apply cox's model to Normal+Micro
+coxobj_Q2vsQ1<-coxph(formula=Surv(CRIC$time, CRIC$event)~
+                        age+adenine_tertile+race_ethnicity_cat+bmi+sex+map+hemoglobin_a1c+log_acr+egfr_cric_v3y0, data = CRIC)
+print(paste("Cox's model Results for Normal+Micro= "))
+coxobj_Q2vsQ1
+exp(confint(coxobj_Q2vsQ1)) 
+```
+# Cumulative incidence plot for normo+Micro group and p-value estimate for Q1 and Q3 for Normo+Micro group
+```{r}
+#Cumulative incidence plot for normo+Micro group and p-value estimate for Q1 and Q3 for Normo+Micro group
+r3_p<-CRIC%>%
+  filter(adenine_tertile=='Q1' | adenine_tertile=='Q3')
+
+ggsurvplot(survfit(Surv(r3_p$time, r3_p$event)~r3_p$adenine_tertile,data=r3_p),xlim=c(-0.1,7), ylim=c(0,0.3), conf.int = FALSE, pval = TRUE,
+           palette = c("black", "grey60","blue"),
+           risk.table = TRUE, risk.table.col = "strata",
+           fun = "event", xlab = "years from baseline",ylab = c("Cumulative incidence"))
+#surv_diff <- survdiff(Surv(r3_p$time, r3_p$event) ~ r3_p$adenine_tertile, data=r3_p)
+#surv_diff
+```
+## Apply cox's model to Full cohorts with adjusted (macro group)
+
+```{r}
+#Select Macro group from subset_dataset
+idx<-which(subset_dataset$acr_group=="macro")
+CRIC<-subset_dataset[idx,]%>%
+  na.omit()
+
+#Apply cox's model to Macro group
+coxobj_Q2vsQ1<-coxph(formula=Surv(CRIC$time, CRIC$event)~
+                        age+adenine_tertile+race_ethnicity_cat+bmi+sex+hemoglobin_a1c+log_acr+egfr_cric_v3y0, data = CRIC)
+print(paste("Cox's model Results for Macro= "))
+coxobj_Q2vsQ1
+exp(confint(coxobj_Q2vsQ1)) 
+```
+
